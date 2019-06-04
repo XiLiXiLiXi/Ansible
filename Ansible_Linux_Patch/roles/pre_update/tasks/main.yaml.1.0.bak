@@ -1,0 +1,15 @@
+---
+#------------------------------------------------------------------------------
+# Description: Check for existence of pre_update.sh script and run it if
+#              found.
+#------------------------------------------------------------------------------
+- name: Checking if pre_update.sh script exists
+  stat:
+    path: /root/ansible/scripts/pre_update.sh
+  register: update_scripts
+
+
+- name: Running pre update script
+  command: sh /root/ansible/scripts/pre_update.sh
+  when: update_scripts.stat.exists == true
+  ignore_errors: no

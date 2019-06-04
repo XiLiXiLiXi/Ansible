@@ -1,0 +1,11 @@
+- name: test
+  hosts: test
+  become: yes
+  any_errors_fatal: false
+ 
+  #########################################################
+  # Execute test role
+  #########################################################
+  roles:
+    - { role: pre_update, become: yes }
+

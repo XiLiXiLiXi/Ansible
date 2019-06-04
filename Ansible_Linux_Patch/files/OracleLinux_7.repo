@@ -1,0 +1,11 @@
+[OracleLinux7_x86_64_latest]
+name=DA Repository OL7 latest
+baseurl=http://192.168.118.11/yum/OracleLinux/OL7/latest/x86_64
+enabled = 1
+gpgcheck = 0
+ 
+[OracleLinux7_x86_64_UEKR5]
+name=DA Repository UEK 7
+baseurl=http://192.168.118.11/yum/OracleLinux/OL7/UEKR5/x86_64/
+enabled = 1
+gpgcheck = 0

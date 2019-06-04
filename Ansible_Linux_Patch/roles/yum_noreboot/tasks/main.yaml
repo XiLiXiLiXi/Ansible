@@ -1,0 +1,17 @@
+---
+#------------------------------------------------------------------------------
+# Dcription: Perform yum update on selected hosts and compare running
+#              kernel version with last updated kernel version.
+#------------------------------------------------------------------------------
+
+- name: Updating all packages
+  yum:
+    name: '*'
+    state: latest
+    security: yes
+    update_cache: yes
+    update_only: yes
+    disablerepo: "*"
+    enablerepo: "{{ ansible_distribution }}{{ ansible_distribution_major_version}}_x86_64_latest"
+  tags:
+    - skip_ansible_lint

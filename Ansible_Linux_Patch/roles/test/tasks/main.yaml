@@ -1,0 +1,45 @@
+# Description: Test
+#------------------------------------------------------------------------------
+
+
+- name: create directory for target on hosts
+  file:
+    path: "ansible"
+    state: directory
+
+- name: copy scripts to hosts
+  copy:
+    src="{{ item }}"
+    dest=ansible/
+    mode=0744
+    force=no
+#  debug:  
+#     msg: "{{ item }}"
+  with_items:
+    - /root/ansible/scripts/yum_update_list.sh
+
+- name: copy yum-reop files to hosts
+  copy:
+    src="/root/ansible/files/{{ ansible_distribution }}_{{ ansible_distribution_major_version}}.repo"
+    dest="/etc/yum.repos.d/local.repo"
+    force=no
+
+- name: Checking if pre_update.sh script exists
+  stat:
+    path: /root/ansible/scripts/pre_update.sh
+  register: update_scripts
+
+
+- name: Running pre update script
+  command: sh /root/ansible/scripts/pre_update.sh
+  when: update_scripts.stat.exists == true
+  ignore_errors: no
+
+- name: Get security patch list to be applied
+  shell: /root/ansible/yum_update_list.sh >> security_update_list_{{ansible_date_time.date}}.csv
+#  shell: pwd
+  args:   
+    chdir: "/root/ansible/"
+#  register: shellout2
+#- debug: 
+#    var=shellout2.stdout

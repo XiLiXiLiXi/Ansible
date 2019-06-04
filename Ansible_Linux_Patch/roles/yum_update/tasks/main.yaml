@@ -1,0 +1,34 @@
+#------------------------------------------------------------------------------
+# Description: Perform yum update on selected hosts and compare running
+#              kernel version with last updated kernel version.
+#       Notes: shell module used to compare last kernel and
+#              current, can't find a better method.
+#------------------------------------------------------------------------------
+
+- name: Updating all security packages
+  yum:
+    name: '*'
+    state: latest
+    security: yes
+    disablerepo: "*"
+    enablerepo: "{{ ansible_distribution }}{{ ansible_distribution_major_version}}_x86_64_latest"
+    update_cache: yes
+    update_only: yes
+  tags:
+    - skip_ansible_lint
+
+- name: Comparing last kernel and running kernel
+  shell: |
+    LAST_KERNEL=$(rpm -q --last kernel | perl -pe 's/^kernel-(\S+).*/$1/' | head -1)
+    CURRENT_KERNEL=$(uname -r)
+
+    if [[ $LAST_KERNEL != $CURRENT_KERNEL ]]; then
+      # Set reboot flag
+      touch /tmp/reboot
+      # Shutdown/stop any services before reboot if exists.
+      if [[ -f /root/ansible/scripts/pre_reboot.sh ]]; then
+        /root/ansible/scripts/pre_reboot.sh
+      fi
+    fi
+  tags:
+    - skip_ansible_lint

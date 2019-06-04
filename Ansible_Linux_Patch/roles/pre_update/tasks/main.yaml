@@ -1,0 +1,69 @@
+---
+#------------------------------------------------------------------------------
+# Description: pre-configuration for the security patch
+#              
+#------------------------------------------------------------------------------
+
+- name: create directory for target on hosts
+  file:
+    path: "ansible"
+    state: directory
+
+- name: create directory on ansible server
+  file:
+    path: "/root/ansible/servers/{{ ansible_hostname }}/security_update_logs"
+    state: directory
+  delegate_to: localhost
+
+- name: copy scripts to hosts
+  copy:
+    src="{{ item }}"
+    dest=ansible/
+    mode=0744
+    force=yes
+  with_items:
+    - /root/ansible/scripts/yum_update_list.sh
+
+- name: copy yum-reop files to hosts
+  copy:
+    src="/root/ansible/files/{{ ansible_distribution }}_{{ ansible_distribution_major_version}}.repo"
+    dest="/etc/yum.repos.d/local.repo"
+    force=yes
+    
+- name: Checking if pre_update.sh script exists
+  stat:
+    path: /root/ansible/scripts/pre_update.sh
+  register: update_scripts
+
+
+- name: Running pre update script
+  command: sh /root/ansible/scripts/pre_update.sh
+  when: update_scripts.stat.exists == true
+  ignore_errors: no
+
+- name: Get security patch list to be applied
+  shell: /root/ansible/yum_update_list.sh {{ ansible_distribution }} {{ ansible_distribution_major_version}}  > security_update_list_{{ansible_date_time.date}}.csv
+  args:
+    chdir: "/root/ansible/"
+
+- name: Fetch the security patch list from hosts
+  fetch:
+    src: /root/ansible/security_update_list_{{ansible_date_time.date}}.csv
+    dest: /root/ansible/servers/{{ ansible_hostname }}/security_update_logs/
+    flat: yes
+
+- name: send notification to related email address
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: west.li@digitalalchemy.com.au
+    password: Stefanie1
+    subject: 'OS patching for {{ ansible_hostname }} is beginning now.'
+    from: 'west@{{ ansible_fqdn }}'
+    body: 'Automated OS patching for {{ ansible_hostname }} is beginning now.'
+    to: '{{ infra_email }}'
+    charset: utf8
+    attach: /root/ansible/servers/{{ ansible_hostname }}/security_update_logs/security_update_list_{{ansible_date_time.date}}.csv
+  delegate_to: localhost
+  tags: mail
+

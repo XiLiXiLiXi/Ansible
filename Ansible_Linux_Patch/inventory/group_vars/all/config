@@ -1,0 +1,8 @@
+# File name of pre and post patching scripts.
+pre_update_script: /root/ansible/scripts/pre_update.sh
+post_update_script: /root/ansible/scripts/post_update.sh
+post_update_conf: /root/ansible/environment/post_update_conf.env
+env_verify_dest: /root/ansible/scripts/env_verify.sh
+
+# Comma-separated list of infra team email addresses
+infra_email: west.li@digitalalchemy.com.au

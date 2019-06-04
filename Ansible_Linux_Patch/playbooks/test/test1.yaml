@@ -1,0 +1,9 @@
+- name: test
+  hosts: test
+  become: yes
+  any_errors_fatal: false
+  tasks:
+    - name: get version
+      debug:
+        msg: " {{ ansible_fqdn }} {{ ansible_hostname }}"
+
