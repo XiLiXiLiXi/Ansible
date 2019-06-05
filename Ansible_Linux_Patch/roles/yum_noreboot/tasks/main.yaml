@@ -1,6 +1,6 @@
 ---
 #------------------------------------------------------------------------------
-# Dcription: Perform yum update on selected hosts and compare running
+# Decription: Perform yum update on selected hosts and compare running
 #              kernel version with last updated kernel version.
 #------------------------------------------------------------------------------
 

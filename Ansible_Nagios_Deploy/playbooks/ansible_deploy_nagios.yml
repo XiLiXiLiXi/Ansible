@@ -1,0 +1,16 @@
+---
+#------------------------------------------------------------------------
+#Description: Playbook to deploy nagios monitoring on selected hosts.
+#
+#------------------------------------------------------------------------
+
+- name: Deploy Nagios monitoring on host(s)
+  hosts: POCTEST
+  remote_user: ansible
+  become: yes
+  any_errors_fatal: false
+  gather_facts: true
+
+# Install and Configure NRPE
+  roles:
+    - {role: ansible_install_nrpe, become: yes}
