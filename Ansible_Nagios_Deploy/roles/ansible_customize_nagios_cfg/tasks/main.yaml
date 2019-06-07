@@ -1,0 +1,16 @@
+---
+#
+#--------------------------------------------
+# Description: Customize nagios configuration file for hosts
+#
+#--------------------------------------------
+
+- name: Generate default configuration file
+  template:
+    src: /home/ansible/DA-Ansible/templates/template.cfg
+    dest: /usr/local/nagios/etc/servers/{{ ansible_hostname + '.cfg'}}
+    owner: nagios
+    group: nagios
+    mode: '0664'
+  become: true
+  delegate_to: 192.168.3.125

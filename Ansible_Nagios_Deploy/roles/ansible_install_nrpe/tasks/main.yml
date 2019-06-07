@@ -1,9 +1,9 @@
 ---
 #
 #------------------------------------------------------------------------------
-# Decription: Install NRPE on selected hosts
+# Description: Install NRPE on selected hosts
 #
-# #------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 #- name: pull nagios installation zip file from Ansible server to remote host
 #  copy:
