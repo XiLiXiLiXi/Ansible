@@ -5,12 +5,81 @@
 #
 #--------------------------------------------
 
+- name: Check roles
+  script: /home/ansible/DA-Ansible/files/scan_ports.sh {{ ansible_hostname }} {{ ansible_distribution }} {{ ansible_distribution_major_version }}
+  register: server_roles
+
+- name: check msg
+  debug:
+    msg: "{{ server_roles.stdout_lines | join(',') }}"
+
+- name: get partitions list
+  include_vars:
+    file: /home/ansible/DA-Ansible/inventory/host_vars/monitored_partitons.lst
+
+- name: create folder if doesn't exist
+  file:
+    path: /tmp/{{ ansible_hostname }}
+    state: directory
+    mode: '0777'
+  delegate_to: 192.168.3.125
+
+- name: clear cfg files.
+  shell: "rm -rf /tmp/{{ ansible_hostname }}/{{ ansible_hostname }}.*"
+  delegate_to: 192.168.3.125
+
+- name: create disk monitoring entries
+  shell: |
+    echo '
+    define service{
+      use                             {{ ansible_hostname }}-service
+      service_description             Partition {{ item.mount }}
+      check_command                   nrpe_check_disk_x!10%!5%!{{ item.mount }}
+      }' >> /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.disk' }}
+  when: item.mount in monitoring_enable_list
+  with_items:
+  - "{{ ansible_mounts }}"
+  become: true
+  delegate_to: 192.168.3.125
+
+- name: Check instances
+  shell: "ps -ef | grep smon |grep -v grep |grep -v ASM | awk '{print $8}' |awk -F_ '{print $3}'"
+  register: oracle_instance
+  when: "'OracleDB_Service' in server_roles.stdout_lines"
+
+- name: get tbs needs to be monitored
+  script: /home/ansible/DA-Ansible/files/tbs.sh {{ item }}
+  register: tbs_list
+  become: true
+  become_user: oracle
+  when: "'OracleDB_Service' in server_roles.stdout_lines"
+  with_items:
+  - "{{ oracle_instance.stdout_lines }}"
+
+- name: generate tbs monitoring
+  shell: |
+    echo '
+    define service {
+      use                             {{ ansible_hostname }}-service
+      service_description             Oracle Tablespace: {{ item.1.split(',')[0] }}/{{ item.1.split(',')[1] }}
+      check_command                   nrpe_check_oracle_tablespace_x!95!96!{{ item.1.split(',')[0] }}!system!eydn9d713!{{ item.1.split(',')[1] }}
+      }' >> /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.tbs' }}
+  when: "'OracleDB_Service' in server_roles.stdout_lines"
+  with_subelements:
+    - "{{ tbs_list.results }}"
+    - stdout_lines
+  delegate_to: 192.168.3.125
+
 - name: Generate default configuration file
   template:
     src: /home/ansible/DA-Ansible/templates/template.cfg
-    dest: /usr/local/nagios/etc/servers/{{ ansible_hostname + '.cfg'}}
+    dest: /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.default'}}
     owner: nagios
     group: nagios
     mode: '0664'
   become: true
+  delegate_to: 192.168.3.125
+
+- name: combine files
+  shell: "cat /tmp/{{ ansible_hostname }}/{{ ansible_hostname }}.* > /usr/local/nagios/etc/objects/servers/{{ ansible_hostname }}.cfg"
   delegate_to: 192.168.3.125
