@@ -7,18 +7,28 @@
 
 - name: Check roles
   script: /home/ansible/DA-Ansible/files/scan_ports.sh {{ ansible_hostname }} {{ ansible_distribution }} {{ ansible_distribution_major_version }}
-  register: server_roles
+  register: server_roles_ports
 
-- name: check msg
-  debug:
-    msg: "{{ server_roles.stdout_lines | join(',') }}"
+- name: get roles
+  set_fact:
+    server_role: "{{ item.split('@')[0] }}"
+  with_items: "{{ server_roles_ports.stdout_lines }}"
+  register: server_roles_result
+
+- name: make a list
+  set_fact:
+    server_roles: "{{ server_roles_result.results | map(attribute='ansible_facts.server_role') | list }}"
 
 - name: get partitions list
   include_vars:
     file: /home/ansible/DA-Ansible/inventory/host_vars/monitored_partitons.lst
 
+- name: debug server_roles
+  debug:
+    msg: "{{ server_roles }}"
+
 - name: create folder if doesn't exist
-  file:
+  file: 
     path: /tmp/{{ ansible_hostname }}
     state: directory
     mode: '0777'
@@ -26,6 +36,18 @@
 
 - name: clear cfg files.
   shell: "rm -rf /tmp/{{ ansible_hostname }}/{{ ansible_hostname }}.*"
+  delegate_to: 192.168.3.125
+
+- name: create port monitoring
+  shell: |
+    echo '
+    define service {
+      use                             {{ ansible_hostname }}-service
+      service_description             {{ item.split('@')[0] }} / TCP {{ item.split('@')[1] }}
+      check_command                   check_tcp!{{ item.split('@')[1] }}
+      }' >> /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.port' }}
+  with_items: "{{ server_roles_ports.stdout_lines }}"
+  become: true
   delegate_to: 192.168.3.125
 
 - name: create disk monitoring entries
@@ -45,29 +67,71 @@
 - name: Check instances
   shell: "ps -ef | grep smon |grep -v grep |grep -v ASM | awk '{print $8}' |awk -F_ '{print $3}'"
   register: oracle_instance
-  when: "'OracleDB_Service' in server_roles.stdout_lines"
+  when: "'OracleDB_Service' in server_roles"
 
 - name: get tbs needs to be monitored
   script: /home/ansible/DA-Ansible/files/tbs.sh {{ item }}
   register: tbs_list
   become: true
   become_user: oracle
-  when: "'OracleDB_Service' in server_roles.stdout_lines"
+  when: "'OracleDB_Service' in server_roles"
+  with_items:
+  - "{{ oracle_instance.stdout_lines }}"  
+ 
+- name: get tbs needs to be monitored
+  script: /home/ansible/DA-Ansible/files/db_nagios_creation.sh {{ item }}
+  become: true
+  become_user: oracle
+  when: "'OracleDB_Service' in server_roles"
   with_items:
   - "{{ oracle_instance.stdout_lines }}"
-
+ 
 - name: generate tbs monitoring
   shell: |
     echo '
     define service {
       use                             {{ ansible_hostname }}-service
       service_description             Oracle Tablespace: {{ item.1.split(',')[0] }}/{{ item.1.split(',')[1] }}
-      check_command                   nrpe_check_oracle_tablespace_x!95!96!{{ item.1.split(',')[0] }}!system!eydn9d713!{{ item.1.split(',')[1] }}
+      check_command                   nrpe_check_oracle_tablespace_x!95!96!{{ item.1.split(',')[0] }}!nagios!Nagios_test_1!{{ item.1.split(',')[1] }}
       }' >> /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.tbs' }}
-  when: "'OracleDB_Service' in server_roles.stdout_lines"
+  when: "'OracleDB_Service' in server_roles"
   with_subelements:
     - "{{ tbs_list.results }}"
     - stdout_lines
+  delegate_to: 192.168.3.125
+
+- name: check if ASM is enabled for database
+  shell: "ps -ef | grep asm_smon |grep -v grep | awk '{print $8}' |awk -F_ '{print $1}'"
+  register: asm_instance
+  when: "'OracleDB_Service' in server_roles"
+
+- name: get asm partitions to be monitored
+  shell: |
+    echo "
+    define service {
+      use                             {{ ansible_hostname }}-service
+      service_description             Oracle ASM: ASM DATA
+      check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!nagios!Nagios_test_1!DATA
+      }
+
+    define service {
+      use                             {{ ansible_hostname }}-service
+      service_description             Oracle ASM: ASM REDO
+      check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!nagios!Nagios_test_1!REDO
+      }
+
+    define service {
+      use                             {{ ansible_hostname }}-service
+      service_description             Oracle ASM: ASM ARCH
+      check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!nagios!Nagios_test_1!ARCH
+      }
+
+     " >> /tmp/{{ ansible_hostname }}/{{ ansible_hostname + '.asm' }}
+  environment:
+    ORACLE_SID: "{{ oracle_instance.stdout_lines | first }}"
+  when:
+    - "'OracleDB_Service' in server_roles"
+    - "'asm' in asm_instance.stdout_lines"
   delegate_to: 192.168.3.125
 
 - name: Generate default configuration file
@@ -80,6 +144,22 @@
   become: true
   delegate_to: 192.168.3.125
 
-- name: combine files
-  shell: "cat /tmp/{{ ansible_hostname }}/{{ ansible_hostname }}.* > /usr/local/nagios/etc/objects/servers/{{ ansible_hostname }}.cfg"
+- name: uncomment to recreate the cfg file 
+  file:
+    path: /usr/local/nagios/etc/objects/servers/{{ ansible_hostname }}.cfg
+    state: absent
   delegate_to: 192.168.3.125
+
+- name: combine files
+  shell: "cat /tmp/{{ ansible_hostname }}/{{ ansible_hostname }}.{{ item }} >> /usr/local/nagios/etc/objects/servers/{{ ansible_hostname }}.cfg"
+  with_items:
+    - default
+    - disk
+    - port
+    - tbs
+    - asm
+  ignore_errors: yes
+  delegate_to: 192.168.3.125
+
+
+

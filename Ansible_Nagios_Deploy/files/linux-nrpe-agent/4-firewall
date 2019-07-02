@@ -1,0 +1,26 @@
+#!/bin/bash -e
+
+. ./xi-sys.cfg
+
+# Was previous step completed?
+if [ ! -f installed.services ]; then
+    echo "Services were not initialized - run previous script" >&2
+    exit 1
+fi
+
+# Was this step already completed?
+if [ -f installed.firewall ]; then
+    echo "Firewall rules already configured - skipping."
+    exit 0
+fi
+
+# UPDATE FIREWALL SETTINGS
+skip_firewall() {
+    echo "Firewall rules not touched"
+    touch skipped.firewall
+    touch installed.firewall
+    exit
+}
+
+#temp disable the firewall change
+skip_firewall

@@ -1,0 +1,12 @@
+---
+#
+- name: test
+  hosts: nbn_uat
+  remote_user: ansible
+  become: yes
+  any_errors_fatal: yes
+  gather_facts: true
+
+#test 
+  roles:
+    - {role: ansible_customize_nagios_cfg, become: yes}

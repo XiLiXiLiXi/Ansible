@@ -1,0 +1,36 @@
+#!/bin/bash
+
+echo "NRPE-POST"
+
+# Post-install modifications
+
+# Cfg subdirectory
+mkdir -p /usr/local/nagios/etc/nrpe
+
+# Config files/dirs
+if [ -f /usr/local/nagios/etc/nrpe/common.cfg ]; then
+	cp /usr/local/nagios/etc/nrpe/common.cfg /usr/local/nagios/etc/nrpe/common.cfg.save
+fi
+if [ -f /usr/local/nagios/etc/nrpe/asterisk.cfg ]; then
+	cp /usr/local/nagios/etc/nrpe/asterisk.cfg /usr/local/nagios/etc/nrpe/asterisk.cfg.save
+fi
+cp -r mods/cfg/* /usr/local/nagios/etc
+
+# Permissions
+chown -R nagios:nagios /usr/local/nagios/etc/nrpe.cfg /usr/local/nagios/etc/nrpe/
+
+# Turn xinetd from distable off to on and set per source to 25 connections
+sed -i "s/.*disable.*/    disable         = no/" /etc/xinetd.d/nrpe
+sed -i '/disable.*=.*no/a\    per_source      = 25' /etc/xinetd.d/nrpe
+
+# Restart xinetd
+if [ ! `command -v systemctl` ];then
+    service xinetd restart
+else
+    systemctl restart xinetd.service
+fi
+
+# Fix /sbin/service on Debian
+if [ -e /usr/sbin/service ] && [ ! -e /sbin/service ]; then
+	ln -s /usr/sbin/service /sbin/service
+fi

@@ -1,0 +1,82 @@
+#!/bin/bash -e
+
+. ../xi-sys.cfg
+
+echo SUB
+
+mkdir -p /usr/local/nagios/etc
+chown -R nagios:nagios /usr/local/nagios
+
+for pkg in nagiosplugins nrpe extraplugins; do
+	(
+		cd $pkg
+		time ./install
+	)
+done
+
+# Post-fixes
+if [ ! -d /usr/local/nagios/var/spool ]; then
+	mkdir -p /usr/local/nagios/var/spool
+fi
+chown -R nagios:nagios /usr/local/nagios/var/spool
+
+if [ "$INTERACTIVE" = "True" ] && [ -z $NRPE_ALLOWED_IPS ]; then
+
+	XINETD_ALLOW=$(sed -n '/only_from/ s/.*= *//p' /etc/xinetd.d/nrpe)
+	cat <<-IPs_HERE; printf '### %-72s ###\n' $XINETD_ALLOW; cat <<-EOF
+
+	################################################################################
+	###                                                                          ###
+	### NRPE is currently set to allow connections only from these IP addresses: ###
+	###                                                                          ###
+IPs_HERE
+	###                                                                          ###
+	### If you would like to change this list, enter all IP addresses to allow,  ###
+	### separated by spaces only, and then press Enter.                          ###
+	### (Put the address(es) of your Nagios XI servers(s) here.)                 ###
+	###                                                                          ###
+	################################################################################
+
+EOF
+
+	read -p "Allow from:  " ALLOW_INPUT
+	if [ "$ALLOW_INPUT" != "" ]; then
+		if [[ $ALLOW_INPUT != *"127.0.0.1"* ]]; then
+			ALLOW_INPUT="127.0.0.1 $ALLOW_INPUT"
+		fi
+		sed -i "s~.*only_from.*~    only_from       = $ALLOW_INPUT~" /etc/xinetd.d/nrpe
+	fi
+
+fi
+
+# Set ips if we 
+if [ ! -z $NRPE_ALLOWED_IPS ]; then
+	if [[ $NRPE_ALLOWED_IPS != *"127.0.0.1"* ]]; then
+		NRPE_ALLOWED_IPS="127.0.0.1 $NRPE_ALLOWED_IPS"
+	fi
+	sed -i "s~.*only_from.*~    only_from       = $NRPE_ALLOWED_IPS~" /etc/xinetd.d/nrpe
+fi
+
+if [ ! `command -v systemctl` ]; then
+    service xinetd restart
+    if [ "$distro" == "openSUSE" ] && [ "$ver" == "11" ] || [ "$distro" == "SLES" ] && [ "$ver" == "11" ] || [ "$distro" == "SUSE LINUX" ] && [ "$ver" == "11" ]; then
+		/sbin/chkconfig --set xinetd on
+    fi
+else
+    systemctl restart xinetd.service
+    systemctl enable xinetd.service
+fi
+
+# Some checks require root privileges to be executed.  In order to accomplish this, you must modify the /etc/sudoers file:
+cat >>/etc/sudoers <<-EOF
+
+	# NEEDED TO ALLOW NAGIOS TO CHECK SERVICE STATUS
+	Defaults:nagios !requiretty
+	nagios ALL=NOPASSWD: /usr/local/nagios/libexec/check_init_service
+
+	# ASTERISK-SPECIFIC CHECKS
+	# NOTE: You can uncomment the following line if you are monitoring Asterisk locally
+	#nagios ALL=NOPASSWD: /usr/local/nagios/libexec/check_asterisk_sip_peers.sh, /usr/local/nagios/libexec/nagisk.pl, /usr/sbin/asterisk
+
+EOF
+

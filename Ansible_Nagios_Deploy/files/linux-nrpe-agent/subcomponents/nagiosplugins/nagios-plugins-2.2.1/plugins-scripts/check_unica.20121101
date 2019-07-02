@@ -1,0 +1,161 @@
+#! /bin/sh
+#
+# Paul Moen
+# 31/10/2012
+#
+#  This Nagios plugin was created to check various Unica status, uses Oracle campaign db
+#
+
+PROGNAME=`basename $0`
+PROGPATH=`echo $0 | sed -e 's,[\\/][^\\/][^\\/]*$,,'`
+REVISION="1.4.14"
+
+. $PROGPATH/utils.sh
+
+
+print_usage() {
+  echo "Usage:"
+  echo "  $PROGNAME --flowchart <ORACLE_SID> <USER> <PASS> <FLOWCHART> <CRITICAL> <WARNING>"
+  echo "  $PROGNAME --scheduler <ORACLE_SID> <USER> <PASS> <SCHEDULER> <START> <CRITICAL> <WARNING>"
+  echo "  $PROGNAME --help"
+  echo "  $PROGNAME --version"
+}
+
+print_help() {
+  print_revision $PROGNAME $REVISION
+  echo ""
+  print_usage
+  echo ""
+  echo "Check Unica status"
+  echo ""
+  echo "--flowchart"
+  echo "   Check flowchart, warning if running over, critial is over by 2 standard devs"
+  echo "       --->  Requires Oracle user/password specified."
+  echo "--scheduler"
+  echo "   Check scheduler, warning if running over time by 1hr, critial is over by 2hr"
+  echo "       --->  Requires Oracle user/password specified."
+  echo "--help"
+  echo "   Print this help screen"
+  echo "--version"
+  echo "   Print version and license information"
+  echo ""
+  echo "If the plugin doesn't work, check that the ORACLE_HOME environment"
+  echo "variable is set, that ORACLE_HOME/bin is in your PATH, and the"
+  echo "tnsnames.ora file is locatable and is properly configured."
+  echo ""
+  echo "When checking local database status your ORACLE_SID is case sensitive."
+  echo ""
+  echo "If you want to use a default Oracle home, add in your oratab file:"
+  echo "*:/opt/app/oracle/product/7.3.4:N"
+  echo ""
+  support
+}
+
+case "$1" in
+1)
+    cmd='--tns'
+    ;;
+2)
+    cmd='--db'
+    ;;
+*)
+    cmd="$1"
+    ;;
+esac
+
+# Information options
+case "$cmd" in
+--help)
+		print_help
+    exit $STATE_OK
+    ;;
+-h)
+		print_help
+    exit $STATE_OK
+    ;;
+--version)
+		print_revision $PROGNAME $REVISION
+    exit $STATE_OK
+    ;;
+-V)
+		print_revision $PROGNAME $REVISION
+    exit $STATE_OK
+    ;;
+esac
+
+# Hunt down a reasonable ORACLE_HOME
+if [ -z "$ORACLE_HOME" ] ; then
+	# Adjust to taste
+	for oratab in /var/opt/oracle/oratab /etc/oratab
+	do
+	[ ! -f $oratab ] && continue
+	ORACLE_HOME=`IFS=:
+		while read SID ORACLE_HOME junk;
+		do
+			if [ "$SID" = "$2" -o "$SID" = "*" ] ; then
+				echo $ORACLE_HOME;
+				exit;
+			fi;
+		done < $oratab`
+	[ -n "$ORACLE_HOME" ] && break
+	done
+fi
+# Last resort
+[ -z "$ORACLE_HOME" -a -d $PROGPATH/oracle ] && ORACLE_HOME=$PROGPATH/oracle
+
+if [ "$cmd" != "--db" ]; then
+	if [ -z "$ORACLE_HOME" -o ! -d "$ORACLE_HOME" ] ; then
+		echo "Cannot determine ORACLE_HOME for sid $2"
+		exit $STATE_UNKNOWN
+	fi
+fi
+PATH=$PATH:$ORACLE_HOME/bin
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$ORACLE_HOME/lib
+export ORACLE_HOME PATH LD_LIBRARY_PATH
+
+case "$cmd" in
+--flowchart)
+    if [ ${6} -lt ${7} ] ; then
+	echo "UNKNOWN - Warning level is more then Crit"
+	exit $STATE_UNKNOWN
+    fi
+ echo "No check yet"
+	;;
+--scheduler)
+    result=`sqlplus -s ${3}/${4}@${2} << EOF
+set pagesize 0
+select 
+case when to_char(sysdate,'HH24') < '${7}' and RUNSTATUS = 'Running' then 'OK'
+when to_char(sysdate,'HH24') between '${8}' and '${8}' and RUNSTATUS = 'Running'  then 'WARNING'
+when to_char(sysdate,'HH24') > '${8}' and RUNSTATUS = 'Running' then 'CRITICAL'
+when to_char(sysdate,'HH24') > '${8}' and RUNSTATUS != 'Running' then 'OK' 
+else 'UNDEF' end as "Check"
+from SUNCORP_AFFINIUM.UA_CCRUNLOG c join SUNCORP_AFFINIUM.ua_flowchart f on c.FLOWCHARTID = f.FLOWCHARTID
+where
+upper(FILENAME) like upper('%${5}%')
+and RUNSTARTTIME > trunc(sysdate)-((24-${6})/24)  -- 24 minus the starttime in 24 hr time
+order by RUNSTARTTIME,FILENAME;
+EOF`
+echo $result
+    if [ -n "`echo $result | grep ORA-`" ] ; then
+      error=` echo "$result" | grep "ORA-" | head -1`
+      echo "CRITICAL - $error"
+      exit $STATE_CRITICAL
+    fi
+    if [ -n "`echo $result | grep "CRITICAL"`" ] ; then
+      error=` echo "$result" | grep "CRITICAL" | head -1`
+      echo "CRITICAL - $error"
+      exit $STATE_CRITICAL
+    elif [ -n "`echo $result | grep "WARNING"`" ] ; then
+      error=` echo "$result" | grep "WARNING" | head -1`
+      echo "WARNING - $error"
+      exit $STATE_WARNING
+    else
+      echo "Scheduler has completed OK"
+    fi
+    exit $STATE_OK
+    ;;
+*)
+    print_usage
+		exit $STATE_UNKNOWN
+esac

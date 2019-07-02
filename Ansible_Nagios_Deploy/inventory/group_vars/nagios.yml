@@ -1,0 +1,21 @@
+servers:
+  gaius:
+    client: nbn
+    environment: uat
+    ip: 192.168.25.94
+    roles:
+      - unica
+  sunspot:
+    client: foxtel
+    environment: dev
+    ip: 192.168.3.55
+    roles:
+      - oracle
+      - unica
+  luigi:
+    client: nbn
+    environment: uat
+    ip: 192.168.25.104
+    roles:
+      - oracle
+

@@ -1,0 +1,36 @@
+---
+#------------------------------------------------------------------------------
+# Description: Create ansible user and setup passwodrdless ssh connection
+#              and setup passwordless sudo for all hosts
+#------------------------------------------------------------------------------
+
+- name: "Ensure group ansible exists"
+  group:
+    name: "ansible"
+    state: present
+
+- name: "Create Ansible account and add user to wheel group"
+  user:
+    name: "ansible"
+    groups: ansible,wheel
+    state: present
+  when: ansible_distribution_major_version != "5"
+
+# fix issue for Linux 5 servers
+- name: "create Ansible account and add user to wheel group for linux 5"
+  shell: getent passwd ansible > /dev/null || /usr/sbin/useradd -m -g ansible -G wheel ansible
+  when: ansible_distribution_major_version == "5"
+
+- name: "Add authorized keys"
+  authorized_key:
+    user: "ansible"
+    key: "{{ lookup('file', '/home/ansible/.ssh/id_rsa.pub') }}"
+    state: present
+
+- name: "Allow admin users to sudo without a password"
+  lineinfile:
+    dest: "/etc/sudoers" # path: in version 2.3
+    state: "present"
+    regexp: '^ansible'
+    line: "ansible ALL=(ALL) NOPASSWD: ALL"
+  #  validate: 'visudo -cf %s' disable for linux5

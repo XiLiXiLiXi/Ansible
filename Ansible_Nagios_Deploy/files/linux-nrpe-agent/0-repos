@@ -1,0 +1,90 @@
+#!/bin/bash -e
+
+. ./xi-sys.cfg
+
+# Check if user already configured repos
+if [ -f installed.repos ]; then
+	echo "Repos already configured - exiting."
+	exit 0
+fi
+echo "Configuring Repos..."
+
+##########################################
+# INSTALL REPOS
+##########################################
+
+if [ "$distro" == "CentOS" ] || [ "$distro" == "RedHatEnterpriseServer" ] || [ "$distro" == "OracleServer" ] || [ "$distro" == "CloudLinux" ]; then
+	# See if we need to install EPEL...
+	if ! rpm -q epel-release &>/dev/null; then
+
+		echo "Enabling EPEL repo..."
+		# WIKI page no longer returns download link, now using local copies of the repo rpms. - MG 4/24/2012
+	#	URL=$(curl -s http://fedoraproject.org/wiki/EPEL | grep -o "http://\(download\|dl\).fedoraproject.org/pub/epel/$ver/i386/epel-release-[0-9.-]\+.noarch.rpm")
+		
+		if [ $ver -eq 5 ]; then
+			EPELVER="5-4"
+		elif [ $ver -eq 6 ]; then
+			EPELVER="latest-6"
+		else
+	    	EPELVER="latest-7"
+	    fi
+			
+		PKG="./packages/epel-release-$EPELVER.noarch.rpm"
+		##Add logging so we can trace this failure in the future -MG
+		echo "Installing EPEL PKG: $PKG"
+	#	PKG=$(basename "$URL")
+		#curl -L -O "$URL"
+		rpm -Uvh "$PKG"
+		rm "$PKG"
+		unset URL PKG
+
+		yum check-update || true
+
+	fi
+
+	# Check to make sure RPM was installed
+	if rpm -q epel-release &>/dev/null; then
+		echo "epel-release RPM installed OK"
+	else
+		echo "ERROR: epel-release RPM was not installed - exiting." >&2
+		exit 1
+	fi
+
+# Add SDK repos for SUSE LINUX (SLES) but we don't need them for openSUSE
+elif [ "$distro" == "SUSE LINUX" ] || [ "$distro" == "SUSE" ]; then
+
+	if [ "${version:0:2}" == "11" ]; then
+		
+		echo "Downloading SUSE SDK ..."
+		if [ "$version" == "11.3" ]; then
+			wget 'https://nu.novell.com/repo/$RCE/SLE11-SDK-SP3-Pool/sle-11-x86_64/rpm/x86_64/sle-sdk-release-11.3-1.69.x86_64.rpm'
+			wget 'https://nu.novell.com/repo/$RCE/SLE11-SDK-SP3-Pool/sle-11-x86_64/rpm/x86_64/sle-sdk-release-SDK-11.3-1.69.x86_64.rpm'
+		elif [ "$version" == "11.4" ]; then
+			wget 'https://nu.novell.com/repo/$RCE/SLE11-SDK-SP4-Pool/sle-11-x86_64/rpm/x86_64/sle-sdk-release-11.4-1.55.x86_64.rpm'
+			wget 'https://nu.novell.com/repo/$RCE/SLE11-SDK-SP4-Pool/sle-11-x86_64/rpm/x86_64/sle-sdk-release-SDK-11.4-1.55.x86_64.rpm'
+		fi
+
+		echo "Installing SUSE SDK ..."
+		rpm -ivh --replacepkgs sle-sdk-release-*
+
+		echo "Registering repos ..."
+		suse_register
+
+		echo "Updating repos ...."
+		zypper pd
+
+		rm -rf sle-sdk-release*
+
+	elif [ "${version:0:2}" == "12" ]; then
+	
+		echo "Enabling SUSE SDK ..."
+		SUSEConnect -p "sle-sdk/$version/x86_64"
+		echo "Enabling SUSE Scripting Module ..."
+		SUSEConnect -p 'sle-module-web-scripting/12/x86_64'
+		
+	fi
+
+fi
+
+echo "Repos configured OK"
+touch installed.repos

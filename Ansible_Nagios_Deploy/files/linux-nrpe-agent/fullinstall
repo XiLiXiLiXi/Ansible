@@ -1,0 +1,209 @@
+#!/bin/bash -e
+
+# Set up system variables
+./init.sh
+. ./xi-sys.cfg
+
+# Install log
+log="install.log"
+
+# Installation is interactive by default
+export INTERACTIVE="True"
+export NRPE_ALLOWED_IPS=""
+
+usage() {
+	fmt -s -w $(tput cols) <<-EOF
+
+		Nagios Linux Agent Installer Script v2.0.1
+		Copyright 2009-2018, Nagios Enterprises LLC.
+		License:
+		    Nagios Software License <http://assets.nagios.com/licenses/nagios_software_license.txt>
+		Support:
+		    Customer Ticket Support <http://support.nagios.com/tickets/> (customers only)
+		    Community Forums <http://support.nagios.com/forum/>
+
+		Usage: fullinstall [options...]
+
+		Options:
+		    -h | --help
+		        Display this help text
+		    -n | --non-interactive
+		        Assume defaults for all questions (for scripted installs)
+		    -i | --allowed-ips
+		    	Pass an ip or SPACE-separted list of ip address to add to the nrpe config
+		    	that will be allowed to access nrpe (for ALLOW_INPUT config)
+		    	Example: 127.0.0.1 192.168.0.1 192.168.0.2
+	EOF
+}
+
+# Wrapper function for installation scripts
+run_sub() {
+	echo "Running '$1'..."
+
+	# Run the command and copy output to installer log
+	# Fail file is a portable bourne shell alternative to $PIPESTATUS
+	FAILFILE=".fail-$$"
+	rm -f "$FAILFILE"
+	(eval "$@" 2>&1 || echo $? > "$FAILFILE") | tee -a "$log"
+	echo "RESULT=$(cat "$FAILFILE" 2>/dev/null || echo 0)"
+	if [ -f "$FAILFILE" ]; then
+		cat >&2 <<-EOF
+
+			===================
+			INSTALLATION ERROR!
+			===================
+			Installation step failed - exiting.
+			Check for error messages in the install log (install.log).
+
+			If you require assistance in resolving the issue, please include install.log
+			in your communications with Nagios XI technical support.
+
+			The script that failed was: '$1'
+		EOF
+		exit 1
+	fi
+	rm -f "$FAILFILE"
+}
+
+# Check whether we have sufficient privileges
+if [ $(( $(id -u) )) -ne 0 ]; then
+	echo "This script needs to be run as root/superuser." >&2
+	exit 1
+fi
+
+# Check if the OS is supported by this install script
+caninstall="no"
+
+if [ "$distro" == "CentOS" ] || [ "$distro" == "RedHatEnterpriseServer" ]; then
+	caninstall="yes"
+elif [ "$distro" == "openSUSE" ] || [ "$distro" == "SUSE" ]; then
+	caninstall="yes"
+elif [ "$distro" == "Fedora" ]; then
+	caninstall="yes"
+elif [ "$distro" == "Debian" ] || [ "$distro" == "Ubuntu" ]; then
+	caninstall="yes"
+elif [ "$distro" == "CloudLinux" ]; then
+	caninstall="yes"
+fi
+
+case "$dist" in 
+	oracle5 | oracle6 | oracle7 )
+		caninstall="yes"
+		;;
+esac
+
+if [ "$caninstall" == "no" ]; then
+	echo "$distro is not currently supported. Please use either Red Hat, CentOS, Oracle Linux, CloudLinux, SUSE Enterprise, OpenSUSE, Ubuntu, or Debian." >&2
+	exit 1
+fi
+
+# Check that /sbin & /usr/sbin are in $PATH
+path_is_ok() {
+	echo "$PATH" \
+	| awk 'BEGIN{RS=":"} {p[$0]++} END{if (p["/sbin"] && p["/usr/sbin"]) exit(0); exit(1)}'
+}
+
+if ! path_is_ok; then
+	echo "Your system \$PATH does not include /sbin and /usr/sbin. This is usually the result of installing GNOME rather than creating a clean system."
+	echo "Adding /sbin and /usr/sbin to \$PATH."
+	PATH="$PATH:/usr/sbin:/sbin"
+fi
+
+# Parse command line
+while [ -n "$1" ]; do
+	case "$1" in
+		-h | --help)
+			usage
+			exit 0
+			;;
+		-n | --non-interactive)
+			export INTERACTIVE="False"
+			;;
+		-i | --allowed-ips)
+			export NRPE_ALLOWED_IPS="$2"
+			shift
+			;;
+		*)
+			echo "Unknown option:  $1" >&2
+			usage >&2
+			exit 1
+	esac
+	shift
+done
+
+if [ "$INTERACTIVE" = "True" ]; then
+	cat <<-EOF
+		============================
+		Nagios Linux Agent Installer
+		============================
+
+		This script will install the Nagios Linux Agent by executing all necessary
+		sub-scripts.
+
+		IMPORTANT: This script should only be used on a clean installed system:
+
+				   RedHat Enterprise, CentOS, Fedora, Cloud Linux or Oracle
+				   OpenSUSE or SUSE Enterprise
+				   Ubuntu or Debian
+
+		Do NOT use this on a system running any other distro or that
+		does not allow additional package installation.
+
+	EOF
+	read -p "Do you want to continue? [Y/n] " res
+
+	case "$res" in
+		Y | y | "")
+			echo "Proceeding with installation..."
+			;;
+		*)
+			echo "Installation cancelled"
+			exit 0
+	esac
+fi
+
+# Initialize install.log
+cat >>"$log" <<-EOF
+	Nagios Linux Agent Installation Log
+	===================================
+	DATE: $(date)
+
+	DISTRO INFO:
+	$distro
+	$version
+	$architecture
+
+EOF
+
+# Install the subcomponents
+run_sub ./0-repos noupdate
+run_sub ./1-prereqs
+run_sub ./2-usersgroups
+run_sub ./3-services
+run_sub ./4-firewall
+run_sub ./A-subcomponents
+
+echo >>"$log"
+echo "Install complete!" >>"$log"
+
+cat <<-EOF
+
+	##########################################################
+	###                                                    ###
+	###    Nagios XI Linux Agent Installation Complete!    ###
+	###                                                    ###
+	##########################################################
+
+	If you experience any problems, please attach the file install.log that was just created to any support requests.
+
+EOF
+
+if [ -f skipped.firewall ]; then
+	cat <<-SKIPFW
+
+	NOTICE:
+	Your firewall configuration was skipped
+	You need to manually open ports 5666 for TCP traffic
+
+SKIPFW
+fi

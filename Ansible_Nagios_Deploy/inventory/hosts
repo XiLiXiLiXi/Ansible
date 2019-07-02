@@ -1,2 +1,20 @@
-[test]
-hostname
+[foxtel_uat]
+sunspot ansible_python_interpreter=/usr/bin/python2.6
+
+[nbn_uat]
+gaius
+luigi
+scud
+yoda
+
+[da_uat]
+lotest
+
+[api_uat]
+fagin
+
+[nib_uat]
+marrow ansible_python_interpreter=/usr/bin/python2.6
+
+
+

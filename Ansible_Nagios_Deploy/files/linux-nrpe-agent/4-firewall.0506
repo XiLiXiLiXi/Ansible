@@ -1,0 +1,140 @@
+#!/bin/bash -e
+
+. ./xi-sys.cfg
+
+# Was previous step completed?
+if [ ! -f installed.services ]; then
+    echo "Services were not initialized - run previous script" >&2
+    exit 1
+fi
+
+# Was this step already completed?
+if [ -f installed.firewall ]; then
+    echo "Firewall rules already configured - skipping."
+    exit 0
+fi
+
+# UPDATE FIREWALL SETTINGS
+skip_firewall() {
+    echo "Firewall rules not touched"
+    touch skipped.firewall
+    touch installed.firewall
+    exit
+}
+
+# Update for CentOS/RHEL
+if [ "$distro" == "CentOS" ] || [ "$distro" == "RedHatEnterpriseServer" ] || [ "$distro" == "Fedora" ] || [ "$distro" == "OracleServer" ] || [ "$distro" == "CloudLinux" ]; then
+
+    # check if we have iptables or firewalld even installed
+    if ! hash iptables 2>/dev/null; then
+        skip_firewall
+    else
+        if [ $ver -eq 7 ]; then
+			if [ `/bin/systemctl is-active firewalld` == "inactive" ]; then
+				skip_firewall
+			elif [ `/bin/systemctl is-active firewalld` == "unknown" ]; then
+				skip_firewall
+			fi
+        fi
+
+        # determine information for the rules
+        CHAIN=$(iptables -L | awk '/^Chain.*INPUT/ {print $2; exit(0)}')
+        RULENUM=$((`iptables -L $CHAIN | wc -l` - 2))
+
+        # test to make sure we aren't using less than the minimum 1
+        if [ $RULENUM -lt 1 ]; then RULENUM=1; fi
+
+        # add the rules
+        iptables -I "$CHAIN" "$RULENUM" -m state --state NEW -m tcp -p tcp --dport "5666" -j ACCEPT
+
+        # Save iptables changes depending on if 'iptables-save exists'
+        if [ `service iptables save >/dev/null` ]; then
+            echo "iptables saved"
+        elif [ `iptables-save >/dev/null` ]; then
+            echo "iptables saved"
+        fi
+    fi
+
+    # Make sure firewall settings keep for CentOS 7
+    if [ $ver -eq 7 ] || [ "$distro" == "Fedora" ]; then
+        if ! hash firewall-cmd 2>/dev/null; then
+            skip_firewall
+        fi
+		zone=$(firewall-cmd --get-default-zone)
+        firewall-cmd --zone=$zone --add-port=5666/tcp --permanent
+        firewall-cmd --reload
+        systemctl restart firewalld
+    else
+        service iptables restart
+    fi
+
+# Update SuSE special firewall
+elif [ "$distro" == "SUSE LINUX" ] || [ "$distro" == "SUSE" ] || [ "$distro" == "openSUSE" ] || [ "$distro" == "openSUSE Leap" ]; then
+	
+	if [ "${version:0:2}" == "11" ]; then
+	
+		sed -i '/FW_SERVICES_EXT_TCP=/s/\"$/\ 5666\"/' /etc/sysconfig/SuSEfirewall2
+		
+		# SLES has a different firewall service name
+		if [ -f /etc/init.d/SuSEfirewall2_init ]; then
+			service="SuSEfirewall2_init"
+		else 
+			service="SuSEfirewall2"
+		fi
+
+		# Restart the firewall service
+		if [ ! `command -v systemctl` ]; then
+			service $service restart
+		else
+			systemctl restart $service
+		fi
+
+		# SLES requires us to restart a second service to make the firewall work...
+		if [ -f /etc/init.d/SuSEfirewall2_setup ]; then
+			if [ ! `command -v systemctl` ]; then
+				service SuSEfirewall2_setup restart
+			else
+				systemctl restart SuSEfirewall2_setup
+			fi
+		fi
+
+	elif [ "${version:0:2}" == "12" ]; then
+
+		/usr/sbin/SuSEfirewall2 open EXT TCP 5666
+		systemctl restart SuSEfirewall2.service
+
+	fi
+
+# Add application to ufw
+elif [ "$distro" == "Ubuntu" ] || [ "$distro" == "Debian" ]; then
+
+    mkdir -p /etc/ufw/applications.d
+    cp nagios.firewallapps /etc/ufw/applications.d/nagios
+
+    # If we are actually using ufw, then apply the rules, otherwise try adding iptables rules
+    if [ ! `command -v ufw` ]; then
+
+        # Could not apply... point out that the firewall will need to be configured manually
+        echo "==============================================================="
+        echo ""
+        echo "Automatic Firewall Setup Could Not Complete"
+        echo ""
+        echo "Firewall must be configured manually to allow incoming TCP"
+        echo "connections on port 5666 for NRPE."
+        echo ""
+        echo "==============================================================="
+        echo ""
+        read -p "Press any key to continue install..."
+
+    else
+
+        # Apply applications to firewall
+        ufw allow NRPE
+        ufw reload
+
+    fi
+
+fi
+
+echo "Firewall rules updated OK"
+touch installed.firewall

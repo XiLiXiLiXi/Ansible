@@ -1,0 +1,29 @@
+---
+#
+#--------------------------------------------
+# Description: Customize nagios configuration file for hosts
+#
+#--------------------------------------------
+
+#- name: fetch var files
+#  include_vars:
+#    file: /home/ansible/DA-Ansible/inventory/group_vars/nagios.yml
+
+
+- name: Check roles
+  script: /home/ansible/DA-Ansible/files/scan_ports.sh {{ ansible_hostname }} {{ ansible_distribution }} {{ ansible_distribution_major_version }}
+  register: server_roles
+
+- name: check msg
+  debug:
+    msg: "{{ server_roles.stdout_lines | join(',') }}"
+
+- name: Generate default configuration file
+  template:
+    src: /home/ansible/DA-Ansible/templates/template.cfg
+    dest: /usr/local/nagios/etc/objects/servers/{{ ansible_hostname + '.cfg'}}
+    owner: nagios
+    group: nagios
+    mode: '0664'
+  become: true
+  delegate_to: 192.168.3.125

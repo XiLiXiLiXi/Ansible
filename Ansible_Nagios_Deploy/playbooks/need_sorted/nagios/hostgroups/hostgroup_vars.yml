@@ -1,0 +1,70 @@
+---
+names:
+- linux-servers
+- windows-servers
+- switches
+- meeting-room-devices
+- routers
+- intellicentre
+- rackl18
+- rackl19
+- rackl27
+- rackl28
+- bangkok
+- nanjing
+- dmz1
+- dmz2
+- dainternal
+- internal
+- vm
+- foxtel
+- npbs
+- vmoney
+- blade
+- database
+- spark
+- nib
+- messagestream
+- api
+- nbn
+- ikeajp
+- exasol
+- bss
+- aws-ec2
+- metcash
+- binglee
+
+alias:
+- Linux Servers
+- Windows Servers
+- Network Switches
+- Meeting Room Devices
+- Network Routers
+- Macquarie Intellicentre
+- Rack L18
+- Rack L19
+- Rack L27
+- Rack L28
+- Bangkok
+- Nanjing
+- DMZ1
+- DMZ2
+- DA Internal
+- Internal
+- VM
+- Foxtel
+- NPBS
+- VMoney
+- Blade
+- Database
+- Spark
+- NIB
+- MessageStream
+- API
+- NBN
+- IKEAJP
+- Exasol
+- BSS
+- AWS-EC2
+- Metcash
+- Bing Lee

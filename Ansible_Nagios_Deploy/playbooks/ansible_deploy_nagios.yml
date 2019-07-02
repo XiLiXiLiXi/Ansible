@@ -5,12 +5,14 @@
 #------------------------------------------------------------------------
 
 - name: Deploy Nagios monitoring on host(s)
-  hosts: POCTEST
+  hosts: nbn_uat
   remote_user: ansible
   become: yes
   any_errors_fatal: false
   gather_facts: true
 
-# Install and Configure NRPE
+# Install and Configure NRPE and Generate default nagios cfg files.`
   roles:
     - {role: ansible_install_nrpe, become: yes}
+    - {role: ansible_customize_nagios_cfg, become: yes}
+

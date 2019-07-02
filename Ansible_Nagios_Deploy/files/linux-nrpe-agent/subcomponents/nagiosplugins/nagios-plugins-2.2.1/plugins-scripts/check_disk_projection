@@ -1,0 +1,267 @@
+#!/bin/sh
+
+set -xv
+
+# author: anh
+# date : 16/12/2010
+# 
+# usage: check_disk_projection <HOST_NAME> <PERIOD>
+#
+# projects the past disk usage behaviour and warns/crits if the projected value 
+# zeroes within the projected range. the data is averaged/projected according 
+# to the PERIOD value.
+#
+# warnings occur if the projection zeroes within period and criticals if the 
+# project zeroes within half the period.
+#
+# for example, if period is 7, it means the averages are done across a 7 day
+# period.
+
+
+## VARS ##
+
+# 0 = DEBUG
+# 1 = INFO
+# 2 = ERROR
+LOG_LEVEL=1
+
+MYSQL_HOST=localhost
+MYSQL_DB=nagios
+MYSQL_USER=nagios
+MYSQL_PASS=nagios
+
+DATA_TABLE=disk_check_output
+
+MIN_PERIOD=7
+PROJECTION=30
+
+CODE_EXIT_OK=0
+CODE_EXIT_WARNING=1
+CODE_EXIT_CRITICAL=2
+CODE_EXIT_UNKNOWN=3
+
+## FUNCTIONS ##
+
+function usage {
+	echo "Usage: $0 <HOST_NAME> <PERIOD>"
+}
+
+function logMsg {
+	local timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
+	local log_level=$2
+
+	if [ -z "$2" ]; then
+		local log_level=1
+	fi
+
+	if [ -z "$LOG_LEVEL" ]; then
+		LOG_LEVEL=1
+	fi
+
+	if [ $LOG_LEVEL -gt $log_level ]; then
+		log_level=-1
+	fi
+
+	case "$log_level" in
+		"-1")
+			# do nothing
+			;;
+		"0")
+			echo "$timestamp [DEBUG] $1"
+			;;
+		"1")
+			echo "$timestamp [INFO] $1"
+			;;
+		"2")    
+			echo "$timestamp [ERROR] $1" 1>&2
+			;;
+	esac
+}
+
+function executeSQL {
+	local sql="$1"
+	mysql -B --skip-column-names --protocol=tcp -h $MYSQL_HOST -u $MYSQL_USER -p$MYSQL_PASS $MYSQL_DB -e "$sql"
+	return $?
+}
+
+function validateArgInt {
+	if [[ -z "$1" || ! "$1" =~ ^[0-9]*$ ]]; then
+		usage
+		exit $CODE_EXIT_UNKNOWN
+	fi
+}
+
+function validateArgText {
+	if [[ -z "$1" || ! "$1" =~ ^[-._A-Za-z0-9]*$ ]]; then
+		usage
+		exit $CODE_EXIT_UNKNOWN
+	fi
+}
+
+
+## PRECHECKS ##
+
+HOST=
+WARN=
+CRIT=
+PERIOD=
+
+# check hostname
+validateArgText "$1"
+HOST="$1"
+
+# check period value
+validateArgInt "$2"
+PERIOD="$2"
+
+# check that period is greater than minimum period
+if [ $PERIOD -lt $MIN_PERIOD ]; then
+	logMsg "Period specified is less than the minimum period of $MIN_PERIOD" 2
+	exit $CODE_EXIT_UNKNOWN
+fi
+
+# check database is connectable
+executeSQL "select 1" 1>/dev/null 2>&1
+if [ $? -ne 0 ]; then
+	logMsg "Unable to connect to database, check credentials and connection" 2
+	exit $CODE_EXIT_UNKNOWN
+fi
+
+
+## MAIN ##
+yesterday=$(date -d "-1 day" +%Y-%m-%d)
+
+# records: ts, partition, current, total
+records=( )
+
+# averages: partition, current_average, previous_average
+averages=( )
+
+sql="	
+	SELECT	concat('\"', unix_timestamp(date(ts))),
+		replace(partition, ' ', '_'),
+		current,
+		concat(total, '\"')
+	FROM	$DATA_TABLE 
+	WHERE	host = '$HOST' AND
+		ts <= '$yesterday' AND
+		ts >= date_add('$yesterday', interval -1*($PERIOD*2) day)
+	ORDER BY partition, ts"
+logMsg "Executing: $sql" 0
+output=$(executeSQL "$sql" 2>/dev/null)
+test $? -ne 0 && logMsg "Failed to execute database query: $sql" 2
+
+# create record array
+eval records=( $(echo -e "$output") )
+
+# do averages
+logMsg "Doing averages" 0
+partition=
+current=0
+previous=0
+total=
+r_count=0
+a_count=${#averages[*]}
+ts_yesterday=$(date -d "$yesterday" +%s)
+timestamp=$(date +%s)
+ts_cutoff=$(( $ts_yesterday - $PERIOD * 60 * 60 * 24))
+current_count=0
+previous_count=0
+while [ $r_count -lt ${#records[*]} ]; do
+	record=( ${records[$r_count]} )
+
+	# new partition start
+	if [ $timestamp -gt ${record[0]} ]; then
+		partition="${record[1]}"
+	fi
+	timestamp=${record[0]}
+
+	if [ $timestamp -lt $ts_cutoff ]; then
+		# do previous average
+		previous=$(( $previous + ${record[2]} ))
+		previous_count=$(( $previous_count + 1 ))
+	else
+		# do current average
+		current=$(( $current + ${record[2]} ))
+		current_count=$(( $current_count + 1 ))
+	fi
+
+	# populate averages
+	if [ $timestamp -eq $ts_yesterday ]; then
+		total=${record[3]}
+
+		current=$(( $current / $current_count ))
+
+		if [ $previous_count -eq 0 ]; then
+			previous=$current
+		else
+			previous=$(( $previous / $previous_count ))
+		fi
+		averages[$a_count]="$partition|$previous|$current|$total"
+		logMsg "Added average record: ${averages[$a_count]}" 0
+
+		a_count=$(( $a_count + 1 ))
+		partition=
+		current_count=0
+		previous_count=0
+		current=0
+		previous=0
+	fi	
+
+	r_count=$(( $r_count + 1 ))
+done
+
+# do projection
+logMsg "Doing projection" 0
+message=
+for record in ${averages[*]}; do
+	partition=
+	previous=
+	current=
+	total=
+	diff=-1
+
+	if [[ "$record" =~ ([^|]*)\\|([^|]*)\\|([^|]*)\\|([^|]*) ]]; then
+		partition=${BASH_REMATCH[1]}
+		previous=${BASH_REMATCH[2]}
+		current=${BASH_REMATCH[3]}
+		total=${BASH_REMATCH[4]}
+		diff=$(( $current - $previous ))
+	fi
+
+	projection=
+	if [ $diff -gt 0 ]; then
+		crit_projection=$(echo "scale=2;$total - $current - $diff/$PERIOD*$PROJECTION/2" | bc)
+		warn_projection=$(echo "scale=2;$total - $current - $diff/$PERIOD*$PROJECTION" | bc)
+		crit_projection=${crit_projection%%\.[0-9]*}
+		warn_projection=${warn_projection%%\.[0-9]*}
+		test -z "$crit_projection" && crit_projection=0
+		test -z "$warn_projection" && warn_projection=0
+
+		logMsg "Projection: partition=$partition; current=$current; diff=$diff; total=$total; projection=$warn_projection" 0
+
+		if [ $crit_projection -le 0 ]; then
+			message="$partition; $message"
+			DO_CRITICAL=1
+		elif [ $warn_projection -le 0 ]; then
+			message="$partition; $message"
+			DO_WARNING=1		
+		fi
+	fi
+done
+
+# alert if any
+exit_code=$CODE_EXIT_OK
+pre_message="Following partitions projected to run out of space within"
+if [ $DO_CRITICAL ]; then
+	message="$pre_message $(( $PROJECTION / 2 )) days: $message"
+	exit_code=$CODE_EXIT_CRITICAL
+elif [ $DO_WARNING ]; then
+	message="$pre_message $PROJECTION days: $message"
+	exit_code=$CODE_EXIT_WARNING
+else
+	message="All partition projections are OK"
+fi
+
+echo $message
+exit $exit_code

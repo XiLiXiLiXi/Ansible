@@ -1,0 +1,72 @@
+---
+#           
+#------------------------------------------------------------------------------
+# Decription: Install NRPE on selected hosts
+#
+# #------------------------------------------------------------------------------
+
+#- name: pull nagios installation zip file from Ansible server to remote host
+#  copy:
+#    scr: /home/ansible/DA-Ansible/files/linux-nrpe-agent.tar.gz
+#    dest: /tmp
+#    owner: root
+#    group: root
+#    mode: '0644'
+
+#- name: remove the working folder if exists, uncomment it when you need to reinstall the NRPE
+#  file:
+#    state: absent
+#    path: /tmp/linux-nrpe-agent
+
+#- name: remove the zipfile if exists, uncomment it when you need to reinstall the NRPE
+#  file:
+#    state: absent
+#    path: /tmp/linux-nrpe-agent.tar.gz
+
+- name: Extract nagios installation zip file
+  unarchive:
+    src: /home/ansible/DA-Ansible/files/linux-nrpe-agent.tar.gz
+    dest: /tmp
+  #remote_src: yes
+    remote_src: no
+
+- name: Install and Compile NRPE and Nagios plugins
+  shell: ./fullinstall -n >> "nrpe_{{ ansible_hostname }}.log"
+  args:
+    executable: /bin/bash
+    creates: "nrpe_{{ ansible_hostname }}.log"
+    chdir: /tmp/linux-nrpe-agent
+
+- name: copy necessary command files to libexec
+  shell: cp -ru /tmp/linux-nrpe-agent/subcomponents/nagiosplugins/nagios-plugins-2.2.1/plugins-scripts/* /usr/local/nagios/libexec/
+
+- name: correct the permission for libexec
+  file:
+    path: /usr/local/nagios/libexec/
+    state: directory
+    recurse: yes
+    owner: nagios
+    group: nagios
+
+- name: Enable the connection for current Nagios server # should be commented after deployment.
+  lineinfile:
+    path: /etc/xinetd.d/nrpe
+    regexp: '\s*only_from\s+=\s*((\d{1,3}\.){3}\d{1,3})\s*'
+    line: '    only_from       = 127.0.0.1 192.168.3.125 192.168.3.119'
+  
+- name: restart the nrpe service
+  service:
+    name: xinetd
+    state: restarted
+#  command: /etc/init.d/xinetd restart
+#  args:
+#    chdir: /etc/xinetd.d
+
+- name: Check the nrpe status from Nagios server
+  command: /usr/lib64/nagios/plugins/check_nrpe -H {{ ansible_default_ipv4.address }}
+  register: nrpe_version
+  delegate_to: 192.168.3.125
+
+- name: Show the NRPE version
+  debug:
+    msg: Server {{ ansible_hostname }} IP {{ ansible_default_ipv4.address }}  has installed {{ nrpe_version.stdout }}

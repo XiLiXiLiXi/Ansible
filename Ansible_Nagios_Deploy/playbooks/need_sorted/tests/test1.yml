@@ -1,0 +1,19 @@
+---
+- hosts: edgar
+  become: yes
+  tasks:
+    - name: Create test file
+      copy:
+        dest: "/home/ansible/abc.txt"
+        content: |
+          test 
+    - name: Append to file
+      blockinfile:
+        path: "/home/ansible/abc.txt"
+        marker: ""
+        block: |
+          This is a test file.
+          This is a test file.
+          This is a test file.
+          This is a test file.
+        backup: yes

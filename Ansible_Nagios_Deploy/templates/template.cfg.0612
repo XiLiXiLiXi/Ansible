@@ -1,0 +1,113 @@
+###############################################################################
+###############################################################################
+#
+# HOST DEFINITION
+#
+###############################################################################
+###############################################################################
+
+# Define a host for the local machine
+
+define host{
+        use                     {{ ansible_system | lower }}-server            ; Name of host template to use
+                                                                               ; This host definition will inherit all variables that are defined
+                                                                               ; in (or inherited by) the linux-server host template definition.
+        host_name               {{ ansible_hostname }}
+        alias                   {{ ansible_hostname }} ( {{ servers[ansible_hostname].client }} {{ servers[ansible_hostname].environment }}  {{ servers[ansible_hostname].roles | join(',') }} Server)
+        address                 {{ servers[ansible_hostname].ip }}
+        parents                 
+        hostgroups              {{ ansible_system | lower }}-servers,{{ servers[ansible_hostname].roles | join(',') }}
+        max_check_attempts      5
+        }
+
+###############################################################################
+###############################################################################
+#
+# SERVICE DEFINITIONS
+#
+###############################################################################
+###############################################################################
+
+define service{
+        name                            {{ ansible_hostname }}-service
+        use                             {{ servers[ansible_hostname].client }}-service
+        host_name                       {{ ansible_hostname }}
+        notifications_enabled           1
+        register                        0
+        notification_period             workhours
+        }
+
+# Define a service to "ping" the local machine
+define service{
+        use                             {{ ansible_hostname }}-service         ; Name of service template to use
+        host_name                       {{ ansible_hostname }}
+        service_description             PING
+        check_command                   check_ping!1000.0,40%!2000.0,100%
+        }
+
+# Define a service to check SSH on the local machine.
+define service{
+        use                             {{ ansible_hostname }}-service         ; Name of service template to use
+        host_name                       {{ ansible_hostname }}
+        service_description             SSH
+        check_command                   check_ssh
+        }
+
+# Remote service to check various disk partitions
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Partition /
+        check_command                   nrpe_check_disk_x!10%!5%!/
+        check_command                   check_local_disk!20%!10%!/
+        }
+
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Partition /var
+        check_command                   check_local_disk!20%!10%!/var
+        }
+
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Partition /home
+        check_command                   check_local_disk!20%!10%!/var
+        }
+
+
+# Various system checks
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Current Load
+        check_command                   nrpe_check_load_x!30!40
+        notifications_enabled           0
+        }
+
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Current Users
+        check_command                   nrpe_check_users_x!30!50
+        notifications_enabled           0
+        }
+
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             Total Processes
+        check_command                   nrpe_check_total_procs_x!800!1000
+        notifications_enabled           0
+        }
+
+# Check NTP time sync
+define service{
+        use                             {{ ansible_hostname }}-service
+        host_name                       {{ ansible_hostname }}
+        service_description             NTP
+        check_command                   check_ntp_peer!saturn.digitalalchemy.net.au!10!15
+        notifications_enabled           0
+        }
+

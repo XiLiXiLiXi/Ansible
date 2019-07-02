@@ -1,0 +1,98 @@
+#!/bin/sh
+
+user=digital.alchemy
+password=Jeech8No
+clientid=NAG657		# just for reference
+api_id=3250038
+message=
+number=
+state=
+query=
+
+warn_low_credit=100
+
+state_ok=0
+state_warning=1
+state_critical=2
+state_unknown=3
+
+# list of message status regex that should be ignored
+ignore_msgs=(
+	"CHECK_NRPE: Error - Could not complete SSL handshake"
+	"CHECK_NRPE: Socket timeout after [0-9]* seconds"
+	"NRPE: Command timed out after [0-9]* seconds"
+	"NRPE: Could not complete SSL handshake"
+	"Following partitions projected to run out of space within 15 days"
+	"Following tablespaces projected to run out of space within 15 days"
+)
+
+until [ -z "$1" ]; do
+	case "$1" in
+		-m)
+			shift
+			message="$1"
+			;;
+		-n)
+			shift
+			number="$1"
+			;;
+		-s)
+			shift
+			state="$1"
+			;;
+		-q)
+			query="true"
+			;;
+	esac
+	shift
+done
+
+# check if this is a balance query
+if [ -n "$query" ]; then
+	ret_state=$state_ok
+	response=$(wget -O - -q "http://api.clickatell.com/http/getbalance?user=$user&password=$password&api_id=$api_id")
+	if [[ "$response" =~ ^Credit:\ ([.0-9]+)$ ]]; then
+		credit=$(echo ${BASH_REMATCH[1]} | awk -F. '{print $1}')
+		if [ $credit -le $warn_low_credit ]; then
+			echo "SMS credits low: $credit"
+			ret_state=$state_warning
+		else
+			echo "SMS credits ok: $credit"
+		fi
+	else
+		echo "Unexpected balance query response"
+		ret_state=$state_unknown
+	fi
+	exit $ret_state
+fi
+
+# only process if all vars are set
+if [ -z "$message" -o -z "$number" -o -z "$state" ]; then
+	echo "Usage: $0 -n <61########> -s <CRITICAL|WARNING|...> -m <SOME_MESSAGE>"
+	echo "Usage: $0 -q"
+	exit 1
+fi
+
+# only process criticals - DISABLED, this is configured in the contact template
+#if [[ ! "$state" =~ CRITICAL ]]; then
+#	exit 1
+#fi
+
+# filter out erroneous messages from being sent
+ignore_idx=0
+ignore_count=${#ignore_msgs[*]}
+while [ $ignore_idx -lt $ignore_count ]; do
+	if [ -n "$(echo "$message" | grep -e "${ignore_msgs[$ignore_idx]}")" ]; then
+		# going in here means the message should be ignored
+		exit
+	fi
+	ignore_idx=$(( $ignore_idx + 1 ))
+done
+
+# just in case there is a lead + in the destination number
+number=${number#+}
+
+# substitute spaces for + and then url encode
+message=$(echo -en "$message" | perl -e 'use URI::Escape; while (<STDIN>) { print uri_escape($_); }')
+
+wget -O - -q "http://api.clickatell.com/http/sendmsg?user=$user&password=$password&api_id=$api_id&to=$number&text=$message" >> /tmp/send_sms.log

@@ -1,0 +1,142 @@
+#!/bin/sh
+
+# Author: anh.nguyen@digitalalchemy.com.au - 28/06/2010 10:47
+#
+# Checks if a pid is active, either by passing pid or file containing pid
+
+# Some nagios constants
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+STATE_DEPENDENT=4
+
+## FUNCTIONS
+
+function logError() {
+	local message="$1"
+	echo "Error: $message" 1>&2
+}
+
+function printUsage() {
+	local script_name=$(basename $0)
+	echo -e "Usage:\n    $script_name -p <PID>\n    $script_name -f <PID_FILE>\n    $script_name -g <REGEXP>"
+}
+
+function getPidFromFile() {
+	local file="$1"
+	local status=$STATE_OK
+	if [ ! -f "$file" ]; then
+		logError "Specified argument is not a file"
+		status=$STATE_UNKNOWN
+	else
+		echo $(head -1 "$file" | awk '{print $1}')
+	fi
+	return $status
+}
+
+function getPidFromRegexp() {
+	local pattern="$1"
+	local status=$STATE_OK
+	local pids=(
+		$(ps ax -o pid,cmd | egrep -v "($(basename $0)|grep)" | while read i; do 
+			record=( $i ); 
+			record_pid=${record[0]}
+			record_cmd=$(echo ${record[*]} | sed -e "s/^${record_pid[0]} //" | egrep -e "$pattern")
+			if [ -n "$record_cmd" ]; then
+				echo $record_pid
+			fi
+		done)
+	)
+
+	if [ ${#pids[*]} -gt 1 ]; then
+		logError "Too many PIDs returned, refine regexp pattern"
+		status=$STATE_UNKNOWN
+	else
+		echo ${pids[0]}
+	fi
+
+	return $status
+}
+
+function checkPidFormat() {
+	local pid="$1"
+	local status=$STATE_OK
+	if [[ ! "$pid" =~ ^[0-9]*$ ]]; then
+		logError "Not a valid PID"
+		status=$STATE_UNKNOWN
+	fi
+	return $status
+}
+
+function checkPid() {
+	local pid="$1"
+	local status=$STATE_OK
+
+	# find pid and stat, filter out zombies, output should look like "12345 S"
+	local grepped_pid="$(ps -A -o pid,stat --no-headers | sed -e 's/^\s*//' | grep -e "^${pid} " | grep -ve "Z")"
+	if [ -z "$grepped_pid" ]; then
+		#logError "PID not found"
+		echo "PID not found"
+		status=$STATE_CRITICAL
+	fi
+
+	return $status
+}
+
+# FYI, this function can exit the script
+function testState() {
+	local state="$?"
+	test $state -ne $STATE_OK && exit $state
+}
+
+## MAIN
+
+# check for presence of arguments
+if [ -z "$1" ]; then
+	printUsage
+	exit $STATE_UNKNOWN
+fi
+
+# iterate over arguments
+pid=
+while [ -n "$1" ]; do
+	case "$1" in
+		-p)
+			pid="$2"
+			shift
+			;;
+		-f)
+			pid="$(getPidFromFile "$2")"
+			testState $?
+			shift
+			;;
+		-g)	
+			pid="$(getPidFromRegexp "$2")"
+			testState $?
+			shift
+			;;
+		*)
+			printUsage
+			exit $STATE_UNKNOWN
+			;;
+	esac
+	
+	if [ -n "$pid" ]; then
+		break;
+	else
+		shift
+	fi
+done
+
+# check retrieved pid is pid-like
+checkPidFormat "$pid"
+testState $?
+
+# do pid check
+checkPid "$pid"
+testState $?
+
+# if we get to here, everything is a-ok
+echo "PID check okay - process running"
+exit $STATE_OK

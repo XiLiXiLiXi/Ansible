@@ -1,0 +1,21 @@
+#------------------------------------------------------------------------
+#Description: Playbook to deploy nagios monitoring on selected hosts.
+#
+#------------------------------------------------------------------------
+
+- name: Deploy Nagios monitoring on host(s)
+  hosts: nbn_uat
+  remote_user: ansible
+  become: yes
+  any_errors_fatal: false
+  gather_facts: true
+
+  tasks:
+  - name: Check instances
+    shell: "ps -ef | grep smon |grep -v grep |grep -v ASM | awk '{print $8}' |awk -F_ '{print $3}'"
+    register: oracle_instance
+  
+  - name: display
+    debug:
+      msg: "{{ oracle_instance }}"
+

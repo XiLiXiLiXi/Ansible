@@ -1,0 +1,149 @@
+#!/bin/sh
+
+. /home/nagios/libexec/utils.sh
+
+echo "$@" >> /tmp/wtf.log
+
+## PRECHECKS ##
+which snmpget 2>&1 1>/dev/null
+if [ $? -ne 0 ]; then
+	echo "Cannot find command snmpget"
+	exit $STATE_UNKNOWN
+fi
+
+## INPUTS ##
+host=
+community=
+interface_id=
+interface_name=
+use_hc="false"
+
+## VARS ##
+# Keep in mind that Gbps links can wrap in 34 seconds
+#
+poll_duration=10
+poll_count=6
+oid_ifInOctets=1.3.6.1.2.1.2.2.1.10
+oid_ifOutOctets=1.3.6.1.2.1.2.2.1.16
+oid_ifHCInOctets=1.3.6.1.2.1.31.1.1.1.6
+oid_ifHCOutOctets=1.3.6.1.2.1.31.1.1.1.10
+counter32_limit=4294967295
+counter64_limit=18446744073709551615
+
+## FUNCTIONS ##
+function checkSNMP {
+	local counter="$1"
+	local previous_value="$2"
+	local oid_string="$3"
+
+	output=$(getOutput $oid_string)
+	if [ $? -ne 0 ]; then
+		exit $STATE_UNKNOWN
+	fi
+
+	value=$(echo $output | awk '{print $NF}')
+
+	# check if the counter has rolled over, assume poll duration is less than
+	# the possible minimum roll over time (~34s for gb and 32bit)
+	if [ $previous_value -gt $value ]; then
+		counter_limit=$counter32_limit
+		if [ "$use_hc" = "true" ]; then
+			counter_limit=$counter64_limit
+		fi
+	
+		counter=$(($counter + $counter_limit - $previous_value + $value ))
+	else
+		counter=$(($value - $previous_value + $counter))
+	fi
+
+	previous_value=$value
+
+	echo "$counter|$previous_value"
+}
+
+function calculateBandwidth {
+	echo "scale=2;$1/$poll_count/$poll_duration" | bc
+}
+
+function getOutput {
+	output=$(snmpwalk -v1 -c $community $host $1)
+	if [ $? -ne 0 ]; then
+		exit $STATE_UNKNOWN
+	fi
+	echo $output
+}
+
+## CHECK INPUTS ##
+until [ -z "$1" ]; do
+	case "$1" in
+		-h)
+			shift
+			host="$1"
+			;;
+		-c)
+			shift
+			community="$1"
+			;;
+		-i)
+			shift
+			interface_id="$1"
+			;;
+		-n)
+			shift
+			interface_name="$1"
+			;;
+		-z)
+			use_hc="true"
+			;;
+	esac
+	shift
+done
+
+if [ -z "$host" -o -z "$community" -o -z "$interface_id" -o -z "$interface_name" ]; then
+	echo "Usage: $0 -h <host> -c <community> -i <interface_index> -n <interface_name> [-z]"
+	exit $STATE_UNKNOWN
+fi
+
+# we need to sample a few times relatively often because the 
+# Dell 6224 doesn't have 64bit counters! Eff'n Dell!
+in_oid_string="$oid_ifInOctets.$interface_id"
+out_oid_string="$oid_ifOutOctets.$interface_id"
+if [ "$use_hc" = "true" ]; then
+	in_oid_string="$oid_ifHCInOctets.$interface_id"
+	out_oid_string="$oid_ifHCOutOctets.$interface_id"
+fi
+
+in_output=$(getOutput "$in_oid_string")
+in_counter=0
+in_value=$(echo $in_output | awk '{print $NF}')
+in_previous_value=$in_value
+
+out_output=$(getOutput "$out_oid_string")
+out_counter=0
+out_value=$(echo $out_output | awk '{print $NF}')
+out_previous_value=$out_value
+
+count=$poll_count
+while [ $count -gt 0 ]; do
+	sleep $poll_duration
+
+	in_output="$(checkSNMP $in_counter $in_previous_value $in_oid_string)"
+	out_output="$(checkSNMP $out_counter $out_previous_value $out_oid_string)"
+
+	#echo $in_output
+	in_counter=${in_output%%\|*}
+	in_previous_value=${in_output##*\|}
+
+	#echo $out_output
+	out_counter=${out_output%%|*}
+	out_previous_value=${out_output##*|}
+
+
+	count=$(($count-1))
+done
+
+in_bandwidth=$(calculateBandwidth $in_counter)
+out_bandwidth=$(calculateBandwidth $out_counter)
+
+echo "Bandwidth usage for port $interface_name ($interface_id) is: IN: ${in_bandwidth} B/s, OUT: ${out_bandwidth} B/s"
+exit $STATE_OK

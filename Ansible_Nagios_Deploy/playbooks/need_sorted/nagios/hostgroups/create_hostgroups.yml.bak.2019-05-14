@@ -1,0 +1,38 @@
+---
+- hosts: edgar
+  vars_files:
+    - hostgroup_vars.yml
+  become: yes
+  tasks:
+    - name: Create hostgroups file
+      copy:
+        dest: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        owner: nagios
+        group: nagios
+        force: no
+        content: |
+          ###############################################################################
+          ################################################################################
+          ##
+          ## HOST GROUP DEFINITION
+          ##
+          ################################################################################
+          ################################################################################
+    
+    - name: Back up file
+      lineinfile:
+        path: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        line: ""
+        backup: yes
+    
+    - name: Add groups
+      blockinfile:
+        path: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        marker: ""
+        block: |
+          define hostgroup{
+                  hostgroup_name  "{{ item.name }}"
+                  alias           "{{ item.alias }}" 
+                  }
+      with_items:
+         -  { name: "{{ names }}", alias: "{{ alias }}" }

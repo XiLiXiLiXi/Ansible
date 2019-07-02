@@ -1,0 +1,7 @@
+#!/bin/bash -e
+
+destdir=/usr/local/nagios/libexec
+
+echo "INSTALLING EXTRA PLUGINS..."
+
+cp -r plugins/* nagisk/nagisk.pl "$destdir"

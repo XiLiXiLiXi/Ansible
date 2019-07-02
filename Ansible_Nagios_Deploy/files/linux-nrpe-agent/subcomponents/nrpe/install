@@ -1,0 +1,51 @@
+#!/bin/bash
+
+. ../../xi-sys.cfg
+
+pkgname=nrpe-3.2.1
+libssldir=""
+
+echo "NRPE"
+
+# Set the SSL LIB dir for Ubunut/Debian
+if [ "$distro" == "Debian" ] || [ "$distro" == "Ubuntu" ]; then
+	if [ "$arch" == "x86_64" ]; then
+		libssldir="--with-ssl-lib=/usr/lib/x86_64-linux-gnu/"
+	else
+		libssldir="--with-ssl-lib=/usr/lib/i386-linux-gnu/"
+	fi
+fi
+
+# Set the SSL Lib dir for Raspbian
+if [ "$distro" == "Raspbian" ]; then
+	libssldir="--with-ssl-lib=/usr/lib/arm-linux-gnueabihf"
+fi
+
+# Delete the old archive
+rm -rf $pkgname
+
+# Extract archive
+tar xzf $pkgname.tar.gz
+
+# Save old config file
+if [ -f /usr/local/nagios/etc/nrpe.cfg ]; then
+	mv /usr/local/nagios/etc/nrpe.cfg /usr/local/nagios/etc/nrpe.cfg.save
+fi
+
+# Make and install 
+(
+	cd $pkgname
+	./configure --enable-command-args --libexecdir=/usr/local/nagios/libexec $libssldir
+	make all
+	make install install-config install-inetd
+)
+
+# Restart xinetd
+if [ ! `command -v systemctl` ];then
+    service xinetd restart
+else
+    systemctl restart xinetd.service
+fi
+
+# Post-install modifications
+./post-install

@@ -1,0 +1,4 @@
+[NRPE]
+title=Nagios Remote Plugin Executor
+description=Allows remote execution of Nagios plugins
+ports=5666/tcp

@@ -1,0 +1,7 @@
+{% if item.mount in monitoring_enable_list  %}
+define service{
+        use                             yoda-service
+        service_description             Partition {{ item.mount }}
+        check_command                   nrpe_check_disk_x!10%!5%!{{ item.mount }}
+        }
+{% endif %}

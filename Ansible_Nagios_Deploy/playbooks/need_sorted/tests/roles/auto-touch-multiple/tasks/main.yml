@@ -1,0 +1,9 @@
+---
+# tasks file for auto-touch-multiple
+
+- name: List dictionary values via template and create files
+  template:
+    src: test-temp.j2
+    dest: /tmp/"{{ item }}"
+  with_items:
+    "{{ basevars | list }}"

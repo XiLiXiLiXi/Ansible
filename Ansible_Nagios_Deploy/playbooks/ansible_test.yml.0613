@@ -1,0 +1,43 @@
+---
+#------------------------------------------------------------------------
+#Description: Playbook to deploy nagios monitoring on selected hosts.
+#
+#------------------------------------------------------------------------
+
+- name: Deploy Nagios monitoring on host(s)
+  hosts: nbn_uat
+  remote_user: ansible
+  become: yes
+  any_errors_fatal: false
+  gather_facts: true
+
+  tasks:
+  - name: get partitions need to be monitored
+    include_vars:
+      file: /home/ansible/DA-Ansible/inventory/host_vars/monitored_partitons.lst
+
+  - name: show vars
+    debug:
+      msg: "{{ monitoring_enable_list }}"
+ 
+  - name: create template
+    template: 
+      src: /home/ansible/DA-Ansible/templates/partitions.j2
+      dest: /tmp/{{ item.mount + '.disk'}}
+      owner: nagios
+      group: nagios
+      mode: '0664'
+    with_items:
+    - "{{ ansible_mounts }}"
+    become: true
+
+
+#  - name: Check roles
+#    script: /home/ansible/DA-Ansible/files/scan_ports.sh {{ ansible_hostname }} {{ ansible_distribution }} {{ ansible_distribution_major_version }}
+#    register: server_roles
+ 
+#  - name: check msg
+#    debug:
+#      msg: "{{ server_roles.stdout_lines | join(',') }}"
+  
+  

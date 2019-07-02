@@ -1,0 +1,12 @@
+---
+- name: show me an encrypted var 
+  hosts: localhost 
+  gather_facts: false 
+  vars_files:
+  - /home/ansible/DA-Ansible/inventory/group_vars/win_pw.yml
+
+  tasks:
+  - name: print the vars
+    debug:
+      var: windows_pw
+

@@ -1,0 +1,8 @@
+---
+- name: "Ansible Init"
+  hosts: nbn_uat
+  user: ripul.anand
+  gather_facts: true
+  roles:
+    - { role: ansible_init, become: yes }
+  

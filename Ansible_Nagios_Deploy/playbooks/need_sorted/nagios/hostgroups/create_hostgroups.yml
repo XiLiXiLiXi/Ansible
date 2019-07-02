@@ -1,0 +1,70 @@
+---
+- hosts: edgar
+  become: yes
+  tasks:
+    - name: Create hostgroups file
+      copy:
+        dest: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        owner: nagios
+        group: nagios
+        force: no
+        content: |
+          ################################################################################
+          ################################################################################
+          ##
+          ## HOST GROUP DEFINITION
+          ##
+          ################################################################################
+          ################################################################################
+    
+    - name: Back up file
+      lineinfile:
+        path: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        line: ""
+        backup: yes
+    
+    - name: Add groups
+      blockinfile:
+        path: "/usr/local/nagios/etc/objects/hostgroups.cfg"
+        marker: ""
+        block: |
+          define hostgroup{
+                  hostgroup_name  "{{ item.name }}"
+                  alias           "{{ item.alias }}" 
+                  }
+      with_items:
+          - { name: 'linux-servers', alias: 'Linux Servers' }
+          - { name: 'windows-servers', alias: 'Windows Servers' }
+          - { name: 'switches', alias: 'Network Switches' }
+          - { name: 'meeting-room-devices', alias: 'Meeting Room Devices' }
+          - { name: 'routers', alias: 'Network Routers' }
+          - { name: 'intellicentre', alias: 'Macquarie Intellicentre' }
+          - { name: 'rackl18', alias: 'Rack L18' }
+          - { name: 'rackl19', alias: 'Rack L19' }
+          - { name: 'rackl27', alias: 'Rack L27' }
+          - { name: 'rackl28', alias: 'Rack L28' }
+          - { name: 'bangkok', alias: 'Bangkok' }
+          - { name: 'nanjing', alias: 'Nanjing' }
+          - { name: 'dmz1', alias: 'DMZ1' }
+          - { name: 'dmz2', alias: 'DMZ2' }
+          - { name: 'dainternal', alias: 'DA Internal' }
+          - { name: 'internal', alias: 'Internal' }
+          - { name: 'vm', alias: 'VM' }
+          - { name: 'foxtel', alias: 'Foxtel' }
+          - { name: 'npbs', alias: 'NPBS' }
+          - { name: 'vmoney', alias: 'VMoney' }
+          - { name: 'blade', alias: 'Blade' }
+          - { name: 'database', alias: 'Database' }
+          - { name: 'spark', alias: 'Spark' }
+          - { name: 'nib', alias: 'NIB' }
+          - { name: 'messagestream', alias: 'MessageStream' }
+          - { name: 'api', alias: 'API' }
+          - { name: 'nbn', alias: 'NBN' }
+          - { name: 'ikeajp', alias: 'IKEAJP' }
+          - { name: 'exasol', alias: 'Exasol' }
+          - { name: 'bss', alias: 'BSS' }
+          - { name: 'aws-ec2', alias: 'AWS-EC2' }
+          - { name: 'metcash', alias: 'Metcash' }
+          - { name: 'binglee', alias: 'Bing Lee' }
+          - {name: 'new', alias: 'New Test Group'}
+          - {name: 'test', alias: 'Test 2'}

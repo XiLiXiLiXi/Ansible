@@ -1,0 +1,145 @@
+---
+#------------------------------------------------------------------------
+#Description: Playbook to deploy nagios monitoring on selected hosts.
+#
+#------------------------------------------------------------------------
+
+- name: Deploy Nagios monitoring on host(s)
+  hosts: api_uat
+  remote_user: ansible
+  become: yes
+  any_errors_fatal: false
+  gather_facts: true
+ 
+  tasks:
+  - name: Check roles
+    script: /home/ansible/DA-Ansible/files/scan_ports.sh {{ ansible_hostname }} {{ ansible_distribution }} {{ ansible_distribution_major_version }}
+    register: server_roles
+  
+  - name: check vars1
+    debug:
+      msg: "{{ item }}"
+    with_items: "{{ server_roles.stdout_lines }}"    
+
+  - name: check msg
+    debug:
+      msg: "{{ item.split('@')[0] }}  {{ item.split('@')[1] }}"  
+    with_items: "{{ server_roles.stdout_lines }}"
+    
+  - name: create port monitoring
+    shell: |
+      echo '
+      define service {
+        use                             {{ ansible_hostname }}-service
+        service_description             {{ item.split('@')[0] }}
+        check_command                   check_tcp!{{ item.split('@')[1] }}
+        }' >> /tmp/{{ ansible_hostname + '.port' }}
+    with_items: "{{ server_roles.stdout_lines }}"
+    become: true
+ 
+  - name: get partitions need to be monitored
+    include_vars:
+      file: /home/ansible/DA-Ansible/inventory/host_vars/monitored_partitons.lst
+
+  - name: show vars
+    debug:
+      msg: "{{ monitoring_enable_list }}"
+
+#  - name: truncate file if exists
+#    shell: rm -rf /tmp/{{ ansible_hostname }}.*
+#    file:
+#      path:  /tmp/{{ ansible_hostname + '.disk' }}
+#      state: absent
+
+  - name: create disk monitoring
+    shell: |
+      echo '
+      define service{
+        use                             {{ ansible_hostname }}-service
+        service_description             Partition {{ item.mount }}
+        check_command                   nrpe_check_disk_x!10%!5%!{{ item.mount }}
+        }' >> /tmp/{{ ansible_hostname + '.disk' }}
+    when: item.mount in monitoring_enable_list
+    with_items:
+    - "{{ ansible_mounts }}"
+    become: true
+
+  - name: Check instances
+    shell: "ps -ef | grep smon |grep -v grep | grep -v ASM | awk '{print $8}' |awk -F_ '{print $3}'"
+    register: oracle_instance
+    when: "'OracleDB_Service' in server_roles.stdout_lines"
+  
+  - name: get tbs needs to be monitored
+    script: /home/ansible/DA-Ansible/files/tbs.sh {{ item }}
+    register: tbs_list
+    become: true
+    become_user: oracle
+    when: "'OracleDB_Service' in server_roles.stdout_lines"
+    with_items:
+    - "{{ oracle_instance.stdout_lines }}"
+#    when: "item != '+ASM' and 'OracleDB_Service' in 'server_roles.stdout_lines'"
+
+  - name: check if ASM is enabled for database
+    shell: "ps -ef | grep asm_smon |grep -v grep | awk '{print $8}' |awk -F_ '{print $1}'"
+    register: asm_instance
+    when: "'OracleDB_Service' in server_roles.stdout_lines"
+  
+  - name: get asm partitions to be monitored
+    shell: |
+      echo "
+      define service {
+        use                             {{ ansible_hostname }}-service
+        service_description             Oracle ASM: ASM DATA
+        check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!system!sys4Jp_UNiCa!DATA
+        }
+      
+      define service {
+        use                            {{ ansible_hostname }}-service
+        service_description             Oracle ASM: ASM REDO
+        check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!system!sys4Jp_UNiCa!REDO
+        }
+
+      define service {
+        use                             {{ ansible_hostname }}-service
+        service_description             Oracle ASM: ASM ARCH
+        check_command                   nrpe_check_oracle_asm_x!85!90!$ORACLE_SID!system!sys4Jp_UNiCa!ARCH
+        }
+
+      }" >> /tmp/{{ ansible_hostname + '.asm' }}
+    environment:
+      ORACLE_SID: "{{ oracle_instance.stdout_lines | first }}"
+    when: 
+      - "'OracleDB_Service' in server_roles.stdout_lines"
+      - "'asm' in asm_instance.stdout_lines"
+
+#  - name: show vars oracle
+#    debug:
+#      msg: "{{ item.1.split(',')[1] }}"
+#    when: "'OracleDB_Service' in server_roles.stdout_lines"
+#    with_subelements: 
+#      - "{{ tbs_list.results }}"
+#      - stdout_lines
+
+  - name: generate tbs monitoring
+#   debug:
+#      msg: "{{ item.0 }} -  {{ item.1 }}"
+    shell: |
+      echo '
+      define service {
+        use                             {{ ansible_hostname }}-service
+        service_description             Oracle Tablespace: {{ item.1.split(',')[0] }}/{{ item.1.split(',')[1] }}
+        check_command                   nrpe_check_oracle_tablespace_x!95!96!loReportProd!system!eydn9d713!{{ item.1.split(',')[1] }}
+        }' >> /tmp/{{ ansible_hostname + '.tbs' }}
+    when: "'OracleDB_Service' in server_roles.stdout_lines"
+    with_subelements:
+      - "{{ tbs_list.results }}"
+      - stdout_lines
+#
+#    loop: "{{ tbs_list.results | subelements('stdout_lines') }}"
+#    when: "'OracleDB_Service' in server_roles.stdout_lines"
+
+#    with_items:
+#    -  "{{ tbs_list.stdout_lines }}"
+
+  - name: combine files
+    shell: "cat /tmp/{{ ansible_hostname }}.* > /tmp/{{ ansible_hostname }}_custom.cfg"

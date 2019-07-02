@@ -1,0 +1,66 @@
+2.0.3 - 11/14/2018
+==================
+- Updated check_services to no longer use egrep which doesn't exist on RHEL7 as a binary -JO
+
+2.0.2 - 08/21/2018
+==================
+- Updated with changes for Raspbian installs -TL,BH
+
+2.0.1 - 04/09/2018
+==================
+- Updated with changes for Debian installs -JO
+
+2.0.0 - 09/20/2017
+==================
+- Updated NRPE to 3.2.1 -JO
+- Updated Nagios-Plugins to 2.2.1 -JO
+- Removed NSCA from package/installation -JO
+- Added CloudLinux support -JO
+- Added per_source in xinetd nrpe config to max of 25 connections -JO
+- Fixed issues on Fedora server with firewall configuration -JO
+
+09/12/2016
+==========
+- Updated check_cpu_stats.sh to require /bin/bash for Ubuntu support -JO
+
+07/13/2016
+==========
+- Updated permission setting for /usr/local/nagios/libexec -BH
+
+12/16/2015
+==========
+- Updated check_cpu_stats.sh to handle properly floating point values - SW
+
+03/02/2015
+==========
+- Add support for Amazon Linux -SW
+
+02/23/2015
+==========
+- Updated installer firewall rules for CentOS 7 -JO
+
+01/05/2015
+==========
+- Fix installer for openSuSE and SLES 11 usermod issues -JO
+
+11/24/2014
+==========
+- Added support for SUSE/OpenSUSE and Ubuntu/Debian -JO
+- Fixed support for Fedora -JO
+- Fixed /bin/sh to be /bin/bash to force using bash as the shell -JO
+
+2014-11-04
+==========
+- Update NRPE to 2.15 -SW
+- Update nagios-plugins to 2.0.3 -SW
+- Update NSCA to 2.9.1 -SW
+- Added Oracle Linux Support -SW
+- Added CentOS/RHEL/Oracle Linux 7 support -SW
+
+2012-06-11
+==========
+- custom_check_mem can now excluded cached memory from calculation with the -n flag -SW
+
+2012-05-12
+==========
+- Changed to include the epel repo RPM's - SW

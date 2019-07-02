@@ -1,0 +1,22 @@
+#!/bin/bash -e
+
+# Was previous step completed?
+if [ ! -f installed.usersgroups ]; then
+	echo "Users/groups were not configured - run previous script" >&2
+	exit 1
+fi
+
+# Was this step already completed?
+if [ -f installed.services ]; then
+	echo "/etc/services already updated - skipping."
+	exit 0
+fi
+
+cat >>/etc/services <<-EOF
+
+	# Nagios services
+	nrpe    5666/tcp
+EOF
+
+echo "/etc/services updated"
+touch installed.services
